@@ -1,0 +1,19 @@
+# Already in your .gitignore:
+.env
+__pycache__/
+*.pyc
+.venv/
+
+# Python
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

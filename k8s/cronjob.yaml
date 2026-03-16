@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: confluence-sync
+  namespace: confluence-sync
+spec:
+  schedule: "0 2 * * *"  # Daily at 02:00
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: confluence-sync
+              image: ${REGISTRY}/confluence-openwebui-sync:${TAG}
+              # Default entrypoint runs incremental sync.
+              # For a full sync, override with: ["python", "-m", "src.main", "--full"]
+              envFrom:
+                - secretRef:
+                    name: confluence-sync-secrets
+                - configMapRef:
+                    name: confluence-sync-config
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
