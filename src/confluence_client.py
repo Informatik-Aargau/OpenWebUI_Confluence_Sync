@@ -39,7 +39,7 @@ class ConfluenceClient:
     def get_page_content(self, page_id: str) -> ConfluencePage:
         data = self._get(
             f"/rest/api/content/{page_id}",
-            params={"expand": "body.storage,version,metadata.labels,space"},
+            params={"expand": "body.export_view,version,metadata.labels,space"},
         )
         return self._parse_page(data)
 
@@ -82,7 +82,7 @@ class ConfluenceClient:
                     "cql": cql,
                     "limit": str(limit),
                     "start": str(start),
-                    "expand": "body.storage,version,metadata.labels,space",
+                    "expand": "body.export_view,version,metadata.labels,space",
                 },
             )
             results = data.get("results", [])
@@ -111,7 +111,7 @@ class ConfluenceClient:
 
         space_key = data.get("space", {}).get("key", "")
 
-        body = data.get("body", {}).get("storage", {}).get("value", "")
+        body = data.get("body", {}).get("export_view", {}).get("value", "")
 
         page_url = ""
         if "_links" in data:

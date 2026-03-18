@@ -1,16 +1,30 @@
 from __future__ import annotations
 
+import logging
 import re
+from io import BytesIO
 
-from markdownify import markdownify
+from bs4 import BeautifulSoup
+from docling.datamodel.base_models import DocumentStream
+from docling.document_converter import DocumentConverter
 
 from src.models import ConfluencePage
 
+logger = logging.getLogger(__name__)
+
+_converter = DocumentConverter()
+
 
 def convert_page_to_markdown(page: ConfluencePage, confluence_base_url: str) -> str:
-    """Convert a Confluence page (storage format HTML) to Markdown with metadata header."""
-    html = _preprocess_confluence_html(page.body_storage, confluence_base_url)
-    body_md = markdownify(html, heading_style="ATX", strip=["img"])
+    """Convert a Confluence page (export_view HTML) to Markdown with metadata header."""
+    html = _preprocess_html(page.body_storage, confluence_base_url)
+
+    source = DocumentStream(
+        name=f"{page.id}.html",
+        stream=BytesIO(html.encode("utf-8")),
+    )
+    result = _converter.convert(source)
+    body_md = result.document.export_to_markdown()
     body_md = _postprocess_markdown(body_md)
 
     header = _build_metadata_header(page)
@@ -35,77 +49,26 @@ def _build_metadata_header(page: ConfluencePage) -> str:
     return "\n".join(lines)
 
 
-def _preprocess_confluence_html(html: str, base_url: str) -> str:
-    """Handle Confluence-specific macros before markdownify."""
-    # Info / Note / Warning / Tip panels → blockquote
-    html = re.sub(
-        r'<ac:structured-macro\s+ac:name="(info|note|warning|tip)"[^>]*>'
-        r".*?<ac:rich-text-body>(.*?)</ac:rich-text-body>"
-        r".*?</ac:structured-macro>",
-        r"> **\1:** \2",
-        html,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
+def _preprocess_html(html: str, base_url: str) -> str:
+    """Clean up Confluence export_view HTML for docling.
 
-    # Code blocks
-    html = re.sub(
-        r'<ac:structured-macro\s+ac:name="code"[^>]*>'
-        r".*?<ac:plain-text-body>\s*<!\[CDATA\[(.*?)\]\]>\s*</ac:plain-text-body>"
-        r".*?</ac:structured-macro>",
-        r"<pre><code>\1</code></pre>",
-        html,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
-
-    # No-format blocks
-    html = re.sub(
-        r'<ac:structured-macro\s+ac:name="noformat"[^>]*>'
-        r".*?<ac:plain-text-body>\s*<!\[CDATA\[(.*?)\]\]>\s*</ac:plain-text-body>"
-        r".*?</ac:structured-macro>",
-        r"<pre>\1</pre>",
-        html,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
-
-    # Expand macros → just show body
-    html = re.sub(
-        r'<ac:structured-macro\s+ac:name="expand"[^>]*>'
-        r".*?<ac:rich-text-body>(.*?)</ac:rich-text-body>"
-        r".*?</ac:structured-macro>",
-        r"\1",
-        html,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
-
-    # Strip remaining unknown structured macros — keep body if present
-    html = re.sub(
-        r"<ac:structured-macro[^>]*>"
-        r".*?<ac:rich-text-body>(.*?)</ac:rich-text-body>"
-        r".*?</ac:structured-macro>",
-        r"\1",
-        html,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
-    # Strip macros without rich-text-body
-    html = re.sub(
-        r"<ac:structured-macro[^>]*>.*?</ac:structured-macro>",
-        "",
-        html,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
+    export_view is already fully rendered (macros expanded), so we only need
+    to absolutise relative links and wrap in a full HTML document.
+    """
+    soup = BeautifulSoup(html, "html.parser")
 
     # Convert relative links to absolute
-    html = re.sub(
-        r'href="(/[^"]*)"',
-        rf'href="{base_url}\1"',
-        html,
-    )
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag["href"]
+        if isinstance(href, str) and href.startswith("/"):
+            a_tag["href"] = base_url + href
 
-    # Strip remaining ac:* and ri:* tags but keep their text content
-    html = re.sub(r"</?ac:[^>]*>", "", html)
-    html = re.sub(r"</?ri:[^>]*>", "", html)
+    # Strip any remaining ac:* and ri:* tags (rare in export_view, but just in case)
+    for tag in soup.find_all(re.compile(r"^(ac|ri):", re.IGNORECASE)):
+        tag.unwrap()
 
-    return html
+    body_html = str(soup)
+    return f"<html><body>{body_html}</body></html>"
 
 
 def _postprocess_markdown(md: str) -> str:

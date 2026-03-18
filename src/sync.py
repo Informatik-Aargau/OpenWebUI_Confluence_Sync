@@ -199,10 +199,22 @@ class SyncOrchestrator:
         self, page: ConfluencePage, mapping: SyncMapping, kb_id: str
     ) -> bool:
         """Sync a single page. Returns True if content was changed/added."""
+        existing = self._state.get_synced_page(page.id, mapping.id)
+
+        # Fast path: skip expensive conversion if version hasn't changed
+        if existing and existing.confluence_version == page.version:
+            if self._openwebui.file_exists(existing.openwebui_file_id):
+                logger.debug("Skipping unchanged page '%s' (id=%s, version=%d)", page.title, page.id, page.version)
+                return False
+            logger.warning(
+                "File %s for page '%s' was deleted externally, re-uploading",
+                existing.openwebui_file_id, page.title,
+            )
+            self._state.delete_sync_state(page.id, mapping.id)
+            existing = None
+
         markdown = convert_page_to_markdown(page, self._confluence_base_url)
         content_hash = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
-
-        existing = self._state.get_synced_page(page.id, mapping.id)
 
         if existing and existing.content_hash == content_hash:
             # Content unchanged — but verify the file still exists (self-healing)
