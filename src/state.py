@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS rag.sync_state (
     confluence_last_modified TIMESTAMP,
     openwebui_file_id        VARCHAR(128),
     openwebui_kb_id          VARCHAR(128),
-    mapping_id               INTEGER NOT NULL REFERENCES rag.sync_mappings(id),
+    mapping_id               INTEGER NOT NULL,
     synced_at                TIMESTAMP DEFAULT NOW(),
     content_hash             VARCHAR(64),
     PRIMARY KEY (confluence_page_id, mapping_id)
