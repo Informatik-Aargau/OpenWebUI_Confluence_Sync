@@ -58,6 +58,10 @@ class SyncOrchestrator:
             total_synced += synced
             total_failed += failed
 
+        # Clean up files and states for removed/disabled mappings
+        active_ids = {m.id for m in mappings}
+        self._cleanup_removed_mappings(active_ids)
+
         # Clean up KBs no longer referenced by any mapping
         self._cleanup_stale_knowledge_bases()
 
@@ -352,6 +356,70 @@ class SyncOrchestrator:
         self._openwebui.delete_knowledge_base(mapping.openwebui_kb_id)
         self._state.update_mapping_kb_id(mapping.id, None)
         mapping.openwebui_kb_id = None
+
+    def _cleanup_removed_mappings(self, active_mapping_ids: set[int]) -> None:
+        """Clean up files and state for mappings that were removed or disabled.
+
+        1. Delete each orphaned file from OpenWebUI
+        2. Delete the orphaned sync_state entries from the database
+        (Knowledge bases are cleaned up separately by _cleanup_stale_knowledge_bases)
+        """
+        orphaned_states = self._state.get_states_for_removed_mappings(active_mapping_ids)
+        if not orphaned_states:
+            return
+
+        logger.info(
+            "Found %d orphaned sync state(s) from removed mappings",
+            len(orphaned_states),
+        )
+
+        # Delete files from OpenWebUI individually
+        deleted_file_ids: set[str] = set()
+        for state in orphaned_states:
+            file_id = state.openwebui_file_id
+            if file_id in deleted_file_ids:
+                continue
+
+            # Only delete if no active mapping still references this file
+            remaining = self._state.count_mappings_for_file(file_id)
+            # Subtract the orphaned references for this file
+            orphaned_refs = sum(1 for s in orphaned_states if s.openwebui_file_id == file_id)
+            active_refs = remaining - orphaned_refs
+
+            if active_refs > 0:
+                logger.debug(
+                    "File %s still used by %d active mapping(s), keeping",
+                    file_id, active_refs,
+                )
+                continue
+
+            if self._dry_run:
+                logger.info(
+                    "[DRY RUN] Would delete orphaned file %s (page '%s')",
+                    file_id, state.confluence_title,
+                )
+            else:
+                # Unlink from KB first (if KB still exists)
+                if state.openwebui_kb_id:
+                    self._openwebui.remove_file_from_knowledge(
+                        state.openwebui_kb_id, file_id
+                    )
+                self._openwebui.delete_file(file_id)
+                logger.info(
+                    "Deleted orphaned file %s (page '%s', mapping_id=%d)",
+                    file_id, state.confluence_title, state.mapping_id,
+                )
+            deleted_file_ids.add(file_id)
+
+        # Delete all orphaned sync_state entries
+        if not self._dry_run:
+            count = self._state.delete_states_for_removed_mappings(active_mapping_ids)
+            logger.info("Deleted %d orphaned sync state entries", count)
+        else:
+            logger.info(
+                "[DRY RUN] Would delete %d orphaned sync state entries",
+                len(orphaned_states),
+            )
 
     def _remove_orphan(self, orphan: SyncState) -> None:
         """Remove a page that no longer matches this mapping's criteria.

@@ -312,6 +312,57 @@ class StateManager:
             if r["confluence_page_id"] not in current_page_ids
         ]
 
+    # ── Orphaned mapping cleanup ─────────────────────────────────────
+
+    def get_states_for_removed_mappings(self, active_mapping_ids: set[int]) -> list[SyncState]:
+        """Return sync_state entries whose mapping_id is not in the active set.
+
+        This catches states left behind when a mapping was deleted or disabled.
+        """
+        if not active_mapping_ids:
+            where = "1=1"
+            params: tuple = ()  # type: ignore[assignment]
+        else:
+            placeholders = ",".join(["%s"] * len(active_mapping_ids))
+            where = f"mapping_id NOT IN ({placeholders})"
+            params = tuple(active_mapping_ids)
+
+        with self.conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(f"SELECT * FROM rag.sync_state WHERE {where}", params)
+            rows = cur.fetchall()
+        return [
+            SyncState(
+                confluence_page_id=r["confluence_page_id"],
+                confluence_space_key=r["confluence_space_key"],
+                confluence_version=r["confluence_version"],
+                confluence_title=r["confluence_title"],
+                confluence_last_modified=r["confluence_last_modified"],
+                openwebui_file_id=r["openwebui_file_id"],
+                openwebui_kb_id=r["openwebui_kb_id"],
+                mapping_id=r["mapping_id"],
+                content_hash=r["content_hash"],
+                synced_at=r["synced_at"],
+            )
+            for r in rows
+        ]
+
+    def delete_states_for_removed_mappings(self, active_mapping_ids: set[int]) -> int:
+        """Delete sync_state entries not belonging to any active mapping. Returns rows deleted."""
+        if not active_mapping_ids:
+            with self.conn.cursor() as cur:
+                cur.execute("DELETE FROM rag.sync_state")
+                count = cur.rowcount
+        else:
+            placeholders = ",".join(["%s"] * len(active_mapping_ids))
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    f"DELETE FROM rag.sync_state WHERE mapping_id NOT IN ({placeholders})",
+                    tuple(active_mapping_ids),
+                )
+                count = cur.rowcount
+        self.conn.commit()
+        return count
+
     # ── Sync run tracking ────────────────────────────────────────────
 
     def get_last_successful_sync_time(self) -> datetime | None:
