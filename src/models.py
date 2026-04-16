@@ -54,3 +54,6 @@ class ConfluencePage:
     body_storage: str
     labels: list[str] = field(default_factory=list)
     url: str = ""
+    created_by: str = ""
+    created_date: str = ""
+    last_updated_by: str = ""

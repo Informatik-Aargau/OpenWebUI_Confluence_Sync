@@ -21,12 +21,14 @@ class SyncOrchestrator:
         state: StateManager,
         confluence_base_url: str,
         dry_run: bool = False,
+        force_reupload: bool = False,
     ) -> None:
         self._confluence = confluence
         self._openwebui = openwebui
         self._state = state
         self._confluence_base_url = confluence_base_url
         self._dry_run = dry_run
+        self._force_reupload = force_reupload
 
     def run(self, force_full: bool = False) -> None:
         """Execute sync: full or incremental based on history."""
@@ -182,7 +184,7 @@ class SyncOrchestrator:
             "Re-linking %d files to KB %s for mapping #%d",
             len(states), kb_id, mapping_id,
         )
-        for s in states:
+        for i, s in enumerate(states, 1):
             if not self._openwebui.file_exists(s.openwebui_file_id):
                 logger.warning(
                     "File %s for page '%s' no longer exists, clearing state",
@@ -191,6 +193,10 @@ class SyncOrchestrator:
                 self._state.delete_sync_state(s.confluence_page_id, mapping_id)
                 continue
             self._openwebui.add_file_to_knowledge(kb_id, s.openwebui_file_id)
+            logger.info(
+                "Linked file %d/%d '%s' to KB %s",
+                i, len(states), s.confluence_title, kb_id,
+            )
 
         # Update the KB ID in all remaining state entries
         self._state.update_kb_id_for_mapping(mapping_id, kb_id)
@@ -202,7 +208,7 @@ class SyncOrchestrator:
         existing = self._state.get_synced_page(page.id, mapping.id)
 
         # Fast path: skip expensive conversion if version hasn't changed
-        if existing and existing.confluence_version == page.version:
+        if existing and existing.confluence_version == page.version and not self._force_reupload:
             if self._openwebui.file_exists(existing.openwebui_file_id):
                 logger.debug("Skipping unchanged page '%s' (id=%s, version=%d)", page.title, page.id, page.version)
                 return False
@@ -216,7 +222,7 @@ class SyncOrchestrator:
         markdown = convert_page_to_markdown(page, self._confluence_base_url)
         content_hash = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
 
-        if existing and existing.content_hash == content_hash:
+        if existing and existing.content_hash == content_hash and not self._force_reupload:
             # Content unchanged — but verify the file still exists (self-healing)
             if self._openwebui.file_exists(existing.openwebui_file_id):
                 logger.debug("Skipping unchanged page '%s' (id=%s)", page.title, page.id)
@@ -252,7 +258,18 @@ class SyncOrchestrator:
             logger.info("Creating page '%s' (id=%s)", page.title, page.id)
 
         # Upload a fresh file for this mapping
-        file_id = self._openwebui.upload_file(filename, markdown)
+        metadata = {
+            "id": page.id,
+            "title": page.title,
+            "Link": page.url,
+            "createdBy": page.created_by,
+            "createdDate": page.created_date,
+            "lastUpdatedBy": page.last_updated_by,
+            "lastUpdatedWhen": page.last_modified.isoformat(),
+            "versionNumber": page.version,
+            "file": f"{page.id}_{page.title.replace(' ', '_')}",
+        }
+        file_id = self._openwebui.upload_file(filename, markdown, metadata=metadata)
         added = self._openwebui.add_file_to_knowledge(kb_id, file_id)
 
         if not added:

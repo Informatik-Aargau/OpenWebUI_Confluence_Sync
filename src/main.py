@@ -40,17 +40,21 @@ def main() -> None:
         api_key=settings.openwebui_api_key,
         service_user_id=service_user_id,
         timeout=settings.http_timeout,
+        retries=settings.http_retries,
     )
 
     try:
+        openwebui.verify_service_user()
+
         orchestrator = SyncOrchestrator(
             confluence=confluence,
             openwebui=openwebui,
             state=state,
             confluence_base_url=settings.confluence_base_url,
             dry_run=args.dry_run,
+            force_reupload=args.force_reupload,
         )
-        orchestrator.run(force_full=args.full)
+        orchestrator.run(force_full=args.full or args.force_reupload)
     except Exception:
         logger.exception("Sync failed with unhandled error")
         sys.exit(1)
@@ -82,6 +86,11 @@ def _parse_args() -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="Run without making changes to OpenWebUI or state DB",
+    )
+    parser.add_argument(
+        "--force-reupload",
+        action="store_true",
+        help="Force re-upload of all pages (ignores version/hash checks, useful to fix metadata)",
     )
     return parser.parse_args()
 

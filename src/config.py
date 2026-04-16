@@ -12,6 +12,9 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # Converter engine: "markdownify" (default) or "docling"
+    converter_engine: str = "markdownify"
+
     # HTTP client settings
     http_timeout: int = 60
     http_retries: int = 3

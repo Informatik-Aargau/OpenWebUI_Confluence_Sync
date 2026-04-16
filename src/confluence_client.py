@@ -39,7 +39,7 @@ class ConfluenceClient:
     def get_page_content(self, page_id: str) -> ConfluencePage:
         data = self._get(
             f"/rest/api/content/{page_id}",
-            params={"expand": "body.export_view,version,metadata.labels,space"},
+            params={"expand": "body.export_view,version,history,metadata.labels,space"},
         )
         return self._parse_page(data)
 
@@ -82,7 +82,7 @@ class ConfluenceClient:
                     "cql": cql,
                     "limit": str(limit),
                     "start": str(start),
-                    "expand": "body.export_view,version,metadata.labels,space",
+                    "expand": "body.export_view,version,history,metadata.labels,space",
                 },
             )
             results = data.get("results", [])
@@ -120,6 +120,14 @@ class ConfluenceClient:
                 base = data["_links"].get("base", self._base_url)
                 page_url = f"{base}{web_link}"
 
+        # Author info from version (last updater) and history (creator)
+        version_by = version_info.get("by", {})
+        last_updated_by = self._format_user(version_by)
+
+        history = data.get("history", {})
+        created_by = self._format_user(history.get("createdBy", {}))
+        created_date = history.get("createdDate", "")
+
         return ConfluencePage(
             id=str(data["id"]),
             title=data.get("title", ""),
@@ -129,7 +137,19 @@ class ConfluenceClient:
             body_storage=body,
             labels=labels,
             url=page_url,
+            created_by=created_by,
+            created_date=created_date,
+            last_updated_by=last_updated_by,
         )
+
+    @staticmethod
+    def _format_user(user: dict) -> str:
+        """Format a Confluence user dict as 'username - (Display Name)'."""
+        username = user.get("username", "")
+        display = user.get("displayName", "")
+        if username and display:
+            return f"{username} - ({display})"
+        return username or display or ""
 
     @staticmethod
     def _parse_date(date_str: str) -> datetime:

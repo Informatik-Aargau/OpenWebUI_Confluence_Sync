@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import time
 
 import httpx
 
@@ -9,10 +11,12 @@ logger = logging.getLogger(__name__)
 
 class OpenWebUIClient:
     def __init__(
-        self, base_url: str, api_key: str, service_user_id: str, timeout: int = 60
+        self, base_url: str, api_key: str, service_user_id: str, timeout: int = 60,
+        retries: int = 3,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._service_user_id = service_user_id
+        self._retries = retries
         self._client = httpx.Client(
             base_url=self._base_url,
             headers={
@@ -25,7 +29,47 @@ class OpenWebUIClient:
     def close(self) -> None:
         self._client.close()
 
+    def verify_service_user(self) -> None:
+        """Verify the service user ID matches the authenticated API key.
+
+        Raises ValueError if the API key belongs to a different user.
+        """
+        resp = self._client.get("/api/v1/auths/")
+        self._raise_for_status(resp)
+        data = resp.json()
+        actual_id = data.get("id", "")
+        if actual_id != self._service_user_id:
+            raise ValueError(
+                f"Service user ID mismatch: configured '{self._service_user_id}' "
+                f"but API key belongs to '{actual_id}'. "
+                f"Fix the value in rag.sync_config."
+            )
+
     # ── Helpers ───────────────────────────────────────────────────────
+
+    def _request_with_retry(
+        self, method: str, url: str, **kwargs
+    ) -> httpx.Response:
+        """Execute an HTTP request with retry on transient errors."""
+        for attempt in range(1, self._retries + 1):
+            try:
+                resp = self._client.request(method, url, **kwargs)
+                if resp.status_code == 429:
+                    wait = int(resp.headers.get("Retry-After", str(2 ** attempt)))
+                    logger.warning("Rate limited, retrying in %ds (attempt %d)", wait, attempt)
+                    time.sleep(wait)
+                    continue
+                return resp
+            except httpx.TransportError:
+                if attempt == self._retries:
+                    raise
+                wait = 2 ** attempt
+                logger.warning(
+                    "Transient error on %s %s, retrying in %ds (attempt %d/%d)",
+                    method, url, wait, attempt, self._retries,
+                )
+                time.sleep(wait)
+        raise RuntimeError("Exhausted retries")  # unreachable
 
     @staticmethod
     def _raise_for_status(resp: httpx.Response) -> None:
@@ -129,11 +173,15 @@ class OpenWebUIClient:
         data = resp.json()
         return data.get("user_id") == self._service_user_id
 
-    def upload_file(self, filename: str, content: str) -> str:
+    def upload_file(self, filename: str, content: str, metadata: dict | None = None) -> str:
         """Upload a markdown file and return its file id."""
+        form_data = {}
+        if metadata:
+            form_data["metadata"] = json.dumps(metadata)
         resp = self._client.post(
             "/api/v1/files/",
             files={"file": (filename, content.encode("utf-8"), "text/markdown")},
+            data=form_data,
         )
         self._raise_for_status(resp)
         file_data = resp.json()
@@ -143,7 +191,8 @@ class OpenWebUIClient:
 
     def add_file_to_knowledge(self, kb_id: str, file_id: str) -> bool:
         """Add a file to a KB. Returns True on success, False on duplicate content."""
-        resp = self._client.post(
+        resp = self._request_with_retry(
+            "POST",
             f"/api/v1/knowledge/{kb_id}/file/add",
             json={"file_id": file_id},
         )
