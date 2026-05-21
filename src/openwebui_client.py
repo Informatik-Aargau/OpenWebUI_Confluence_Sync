@@ -137,13 +137,21 @@ class OpenWebUIClient:
         return data.get("user_id") == self._service_user_id
 
     def delete_knowledge_base(self, kb_id: str) -> bool:
-        """Delete a KB. Returns False if not found or not owned by service user."""
+        """Delete a KB. Returns False if not found, not owned, or still in use."""
         if not self.knowledge_base_exists(kb_id):
             logger.debug("KB %s not found or not owned, skipping delete", kb_id)
             return False
         resp = self._client.delete(f"/api/v1/knowledge/{kb_id}/delete")
         if resp.status_code == 404:
             logger.debug("KB %s already deleted", kb_id)
+            return False
+        if resp.status_code >= 500:
+            logger.warning(
+                "Cannot delete KB %s — server returned %d. "
+                "It may still be attached to a model in OpenWebUI. "
+                "Remove it from all models first, then retry.",
+                kb_id, resp.status_code,
+            )
             return False
         self._raise_for_status(resp)
         logger.info("Deleted knowledge base %s", kb_id)
