@@ -10,6 +10,8 @@ from src.models import SyncMapping, SyncRun, SyncState
 
 logger = logging.getLogger(__name__)
 
+# ── Database schema definition ─────────────────────────────────────
+
 SCHEMA_SQL = """
 CREATE SCHEMA IF NOT EXISTS rag;
 
