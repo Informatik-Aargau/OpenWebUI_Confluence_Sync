@@ -39,3 +39,4 @@ Das Tool kann manuell mit zwei Modi gestartet werden:
 - `--full` — Alle Seiten werden geprüft und Waisen (veraltete Einträge) aufgeräumt.
 - `--incremental` — Nur seit dem letzten Lauf geänderte Seiten werden verarbeitet.
 - `--dry-run` — Simulation ohne Änderungen, um zu sehen was passieren würde.
+- `--mapping-ids ID [ID ...]` — Nur die angegebenen Mapping-IDs berücksichtigen (z.B. `--mapping-ids 3 7`). Ohne diesen Parameter werden alle aktiven Mappings verarbeitet.

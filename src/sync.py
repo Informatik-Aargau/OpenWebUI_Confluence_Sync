@@ -30,9 +30,13 @@ class SyncOrchestrator:
         self._dry_run = dry_run
         self._force_reupload = force_reupload
 
-    def run(self, force_full: bool = False) -> None:
+    def run(self, force_full: bool = False, mapping_ids: list[int] | None = None) -> None:
         """Execute sync: full or incremental based on history."""
         mappings = self._state.get_active_mappings()
+
+        if mapping_ids:
+            mappings = [m for m in mappings if m.id in mapping_ids]
+            logger.info("Filtered to mapping IDs %s", mapping_ids)
 
         if not mappings:
             logger.warning("No active sync mappings found in database")

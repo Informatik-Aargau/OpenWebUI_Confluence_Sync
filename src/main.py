@@ -54,7 +54,10 @@ def main() -> None:
             dry_run=args.dry_run,
             force_reupload=args.force_reupload,
         )
-        orchestrator.run(force_full=args.full or args.force_reupload)
+        orchestrator.run(
+            force_full=args.full or args.force_reupload,
+            mapping_ids=args.mapping_ids,
+        )
     except Exception:
         logger.exception("Sync failed with unhandled error")
         sys.exit(1)
@@ -91,6 +94,13 @@ def _parse_args() -> argparse.Namespace:
         "--force-reupload",
         action="store_true",
         help="Force re-upload of all pages (ignores version/hash checks, useful to fix metadata)",
+    )
+    parser.add_argument(
+        "--mapping-ids",
+        type=int,
+        nargs="+",
+        metavar="ID",
+        help="Only process the given sync_mapping IDs (default: all active mappings)",
     )
     return parser.parse_args()
 
