@@ -62,12 +62,14 @@ class SyncOrchestrator:
             total_synced += synced
             total_failed += failed
 
-        # Clean up files and states for removed/disabled mappings
-        active_ids = {m.id for m in mappings}
-        self._cleanup_removed_mappings(active_ids)
+        # Use all active mapping IDs (not just the filtered subset) so that
+        # mappings skipped via --mapping-ids are not treated as removed.
+        all_active_ids = {m.id for m in self._state.get_active_mappings()}
+        self._cleanup_removed_mappings(all_active_ids)
 
-        # Clean up KBs no longer referenced by any mapping
-        self._cleanup_stale_knowledge_bases()
+        # Clean up KBs no longer referenced by any mapping (only when all mappings were processed)
+        if not mapping_ids:
+            self._cleanup_stale_knowledge_bases()
 
         self._state.finish_sync_run(run_id, total_synced, total_failed)
         logger.info(
