@@ -36,8 +36,8 @@ def main() -> None:
         retries=settings.http_retries,
     )
     openwebui = OpenWebUIClient(
-        base_url=settings.openwebui_base_url,
-        api_key=settings.openwebui_api_key,
+        base_url=settings.owui_base_url,
+        api_key=settings.owui_pat,
         service_user_id=service_user_id,
         timeout=settings.http_timeout,
         retries=settings.http_retries,

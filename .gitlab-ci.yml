@@ -16,6 +16,13 @@ generate_env:
     # Append global variables (those without PREFIX) to dotenv file
     - env | grep -v "^${PREFIX}" | grep -v "CI_" >> .env
 
+    # Construct DATABASE_URL from components
+    - |
+      if [ -n "$OWUI_DB_HOST" ]; then
+        echo "DATABASE_URL=postgresql://${OWUI_DB_USER}:${OWUI_DB_PASSWORD}@${OWUI_DB_HOST}:${OWUI_DB_PORT}/${OWUI_DB_NAME_ANALYTICS}" >> .env
+        echo "DATABASE_URL constructed and added to .env"
+      fi
+
     - echo "Erfolgreich .env für $CI_COMMIT_BRANCH generiert."
     - echo "Enthaltene Variablen:"
     - cat .env

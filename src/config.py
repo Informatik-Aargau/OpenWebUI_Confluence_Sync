@@ -7,8 +7,8 @@ class Settings(BaseSettings):
     confluence_pat: str
 
     # OpenWebUI
-    openwebui_base_url: str
-    openwebui_api_key: str
+    owui_base_url: str
+    owui_pat: str
 
     # Database
     database_url: str
