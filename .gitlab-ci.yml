@@ -2,6 +2,20 @@ stages:
   - build
   - deploy
 
+default:
+  retry: 2
+  timeout: 10m
+  tags:
+    - task/fast
+    - os/linux
+    - kind/docker
+    - net/ads
+  before_script:
+    - export no_proxy="*.ktag.ch,10.0.0.0/8,172.16.0.0/12,193.135.0.0/16"
+    - docker login -u $CI_REGISTRY_USER -p $CI_JOB_TOKEN $CI_REGISTRY
+    - cp "/etc/ktag-certs/KTAARGAUROOT02.pem" root.pem
+    - cp "/etc/ktag-certs/KTAARGAUSUB02-01.pem" sub.pem
+
 generate_env:
   stage: build
   image: alpine:latest
