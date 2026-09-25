@@ -2,9 +2,9 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: confluence-sync
-  namespace: confluence-sync
+  namespace: ${K8S_NAMESPACE}
 spec:
-  schedule: "0 2 * * *"  # Daily at 02:00
+  schedule: "${CRON_SCHEDULE}"  # Daily at 02:00
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -24,6 +24,10 @@ spec:
                     name: confluence-sync-secrets
                 - configMapRef:
                     name: confluence-sync-config
+              volumeMounts:
+                - name: env-volume
+                  mountPath: /app/.env
+                  subPath: .env
               resources:
                 requests:
                   memory: "128Mi"
@@ -31,3 +35,7 @@ spec:
                 limits:
                   memory: "512Mi"
                   cpu: "500m"
+          volumes:
+            - name: env-volume
+              secret:
+                secretName: aargaugpt-sync-env-${ENVIRONMENT}

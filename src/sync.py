@@ -105,6 +105,11 @@ class SyncOrchestrator:
             )
             is_full = True
 
+        # Force full sync for new mappings that have never been synced before.
+        if not is_full and not self._state.get_all_states_for_mapping(mapping.id):
+            logger.info("Mapping #%d has no prior state, forcing full sync", mapping.id)
+            is_full = True
+
         # Ensure KB exists
         kb_id = self._ensure_knowledge_base(mapping)
 

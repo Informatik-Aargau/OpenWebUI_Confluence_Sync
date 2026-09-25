@@ -2,33 +2,101 @@ stages:
   - build
   - deploy
 
-variables:
-  IMAGE_NAME: ${CI_REGISTRY_IMAGE}/confluence-openwebui-sync
-  IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}
-
-build:
+generate_env:
   stage: build
-  image: docker:27
-  services:
-    - docker:27-dind
+  image: alpine:latest
   script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker build -t $IMAGE_NAME:$IMAGE_TAG -t $IMAGE_NAME:latest .
-    - docker push $IMAGE_NAME:$IMAGE_TAG
-    - docker push $IMAGE_NAME:latest
-  only:
-    - main
+    - PREFIX=""
+    - if [ "$CI_COMMIT_BRANCH" = "stage" ]; then PREFIX="STAGE_"; fi
+    - if [ "$CI_COMMIT_BRANCH" = "prod" ]; then PREFIX="PROD_"; fi
+    - if [ -z "$PREFIX" ]; then echo "Kein passender Branch."; exit 1; fi
+
+    # Branch-specific variables into dotenv file
+    - env | grep "^${PREFIX}" | sed "s/^${PREFIX}//" > .env
+    # Append global variables (those without PREFIX) to dotenv file
+    - env | grep -v "^${PREFIX}" | grep -v "CI_" >> .env
+
+    - echo "Erfolgreich .env für $CI_COMMIT_BRANCH generiert."
+    - echo "Enthaltene Variablen:"
+    - cat .env
+  artifacts:
+    reports:
+      dotenv: .env
+    paths:
+      - .env
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "stage" || $CI_COMMIT_BRANCH == "prod"'
+
+build-image:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  needs:
+    - job: generate_env
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "stage" || $CI_COMMIT_BRANCH == "prod"'
+  script:
+    - echo "Building and pushing Docker image to GitLab Container Registry"
+    - echo "Using variables from generate_env"
+    - docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+
+# Deploy to Kubernetes (STAGE environment)
 
 deploy:
   stage: deploy
-  image: bitnami/kubectl:latest
-  script:
-    - kubectl apply -f k8s/namespace.yaml
-    - kubectl apply -f k8s/configmap.yaml
-    - kubectl apply -f k8s/secret.yaml
+  #image: bitnami/kubectl:latest
+  image: reg.ag.ch/base-images/alpine-k8s #has kubectl installed
+  environment:
+    name: $CI_COMMIT_BRANCH
+  needs:
+    - job: generate_env
+      artifacts: true
+  before_script:
+    # Set up kubectl with the kubeconfig from dotenv
+    - mkdir -p ~/.kube
     - |
-      sed -e "s|\${REGISTRY}|${CI_REGISTRY_IMAGE}|g" \
-          -e "s|\${TAG}|${IMAGE_TAG}|g" \
-          k8s/cronjob.yaml | kubectl apply -f -
-  only:
-    - main
+      if [ -z "$KUBECONFIG" ]; then
+        echo "ERROR: KUBECONFIG variable is not set in .env. Please configure it in GitLab CI/CD Variables."
+        exit 1
+      fi
+    - echo "$KUBECONFIG" > ~/.kube/config
+    - chmod 600 ~/.kube/config
+    - kubectl version --client
+    - kubectl config current-context
+  script:
+    - echo "Deploying to $CI_COMMIT_BRANCH environment"
+    
+    # Create/update docker registry secret for image pulling
+    - |
+      kubectl create secret docker-registry gitlab-aargaugpt-kpi-registry-stage \
+        --docker-server=$CI_REGISTRY \
+        --docker-username=$K8S_PULL_IMAGE_USER \
+        --docker-password=$K8S_PULL_IMAGE_PASSWORD \
+        --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Create/update secret with environment variables from .env
+    - |
+      B64_DOTENV=$(base64 -w 0 .env)
+      cat <<EOF | kubectl apply -f -
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: aargaugpt-sync-env-$CI_COMMIT_BRANCH
+      type: Opaque
+      data:
+        .env: $B64_DOTENV
+      EOF
+    
+    # Deploy CronJob
+    - export CI_REGISTRY_IMAGE=$CI_REGISTRY_IMAGE
+    - export CI_COMMIT_SHORT_SHA=$CI_COMMIT_SHORT_SHA
+    - envsubst < k8s/cronjob.yaml | kubectl apply -f -
+    
+    # Show deployment status
+    - kubectl get cronjobs -l app=aargaugpt-kpi
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "stage" || $CI_COMMIT_BRANCH == "prod"'
+      when: manual  # No automatic deployment
