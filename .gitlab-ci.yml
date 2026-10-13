@@ -45,7 +45,7 @@ deploy:
         echo "ERROR: One or more required environment-scoped K8S_* variables are missing."
         exit 1
       fi
-    - kubectl config set-cluster "$K8S_CLUSTER" --server="$K8S_SERVER" --certificate-authority=root.pem --kubeconfig ~/.kube/config
+    - kubectl config set-cluster "$K8S_CLUSTER" --server="$K8S_SERVER" --certificate-authority=root.pem --embed-certs=true --kubeconfig ~/.kube/config
     - kubectl config set-credentials "$K8S_USER" --token="$K8S_USER_TOKEN" --kubeconfig ~/.kube/config
     - kubectl config set-context "$K8S_CLUSTER" --cluster="$K8S_CLUSTER" --user="$K8S_USER" --namespace="$K8S_NAMESPACE" --kubeconfig ~/.kube/config
     - kubectl config use-context "$K8S_CLUSTER" --kubeconfig ~/.kube/config
