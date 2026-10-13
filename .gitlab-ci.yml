@@ -75,7 +75,6 @@ deploy:
         --from-literal=CONFLUENCE_PAT="$CONFLUENCE_PAT" \
         --from-literal=OWUI_BASE_URL="$OWUI_BASE_URL" \
         --from-literal=OWUI_PAT="$OWUI_PAT" \
-        --from-literal=MDM_BULK_SIZE="$MDM_BULK_SIZE" \
         --from-literal=MDM_CLIENT_ID="$MDM_CLIENT_ID" \
         --from-literal=MDM_CLIENT_SECRET="$MDM_CLIENT_SECRET" \
         --from-literal=MDM_ENDPOINT_ORGANISATION="$MDM_ENDPOINT_ORGANISATION" \
