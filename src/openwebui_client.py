@@ -197,6 +197,50 @@ class OpenWebUIClient:
         logger.debug("Uploaded file '%s' (id=%s)", filename, file_id)
         return file_id
 
+    def wait_for_file_processing(
+        self,
+        file_id: str,
+        timeout_seconds: float = 300,
+        poll_interval_seconds: float = 1,
+    ) -> None:
+        """Wait until OpenWebUI finishes processing an uploaded file."""
+        deadline = time.monotonic() + timeout_seconds
+        previous_status: str | None = None
+
+        while True:
+            resp = self._request_with_retry("GET", f"/api/v1/files/{file_id}")
+            self._raise_for_status(resp)
+            file_data = resp.json()
+            data = file_data.get("data") or {}
+            status = data.get("status", "pending")
+
+            if status != previous_status:
+                logger.info(
+                    "OpenWebUI file %s processing status: %s",
+                    file_id,
+                    status,
+                )
+                previous_status = status
+
+            if status == "completed":
+                return
+
+            if status == "failed":
+                error = data.get("error")
+                detail = f": {error}" if error else ""
+                raise RuntimeError(
+                    f"OpenWebUI failed to process file {file_id}{detail}"
+                )
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"Timed out waiting for OpenWebUI to process file {file_id}; "
+                    f"last status was {status}"
+                )
+
+            time.sleep(min(poll_interval_seconds, remaining))
+
     def add_file_to_knowledge(self, kb_id: str, file_id: str) -> bool:
         """Add a file to a KB. Returns True on success, False on duplicate content."""
         resp = self._request_with_retry(

@@ -285,6 +285,7 @@ class SyncOrchestrator:
             "file": f"{page.id}_{page.title.replace(' ', '_')}",
         }
         file_id = self._openwebui.upload_file(filename, markdown, metadata=metadata)
+        self._openwebui.wait_for_file_processing(file_id)
         added = self._openwebui.add_file_to_knowledge(kb_id, file_id)
 
         if not added:
