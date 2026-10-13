@@ -41,6 +41,7 @@ deploy:
     - export no_proxy="*.ktag.ch,10.0.0.0/8,172.16.0.0/12,193.135.0.0/16"
     - cp "/etc/ktag-certs/KTAARGAUROOT02.pem" root.pem
     - cp "/etc/ktag-certs/KTAARGAUSUB02-01.pem" sub.pem
+    - cat root.pem sub.pem > k8s-ca.pem
     # Build kubeconfig from environment-scoped GitLab variables.
     - mkdir -p ~/.kube
     - |
@@ -48,7 +49,7 @@ deploy:
         echo "ERROR: One or more required environment-scoped K8S_* variables are missing."
         exit 1
       fi
-    - kubectl config set-cluster "$K8S_CLUSTER" --server="$K8S_SERVER" --certificate-authority=root.pem --embed-certs=true --kubeconfig ~/.kube/config
+    - kubectl config set-cluster "$K8S_CLUSTER" --server="$K8S_SERVER" --certificate-authority=k8s-ca.pem --embed-certs=true --kubeconfig ~/.kube/config
     - kubectl config set-credentials "$K8S_USER" --token="$K8S_USER_TOKEN" --kubeconfig ~/.kube/config
     - kubectl config set-context "$K8S_CLUSTER" --cluster="$K8S_CLUSTER" --user="$K8S_USER" --namespace="$K8S_NAMESPACE" --kubeconfig ~/.kube/config
     - kubectl config use-context "$K8S_CLUSTER" --kubeconfig ~/.kube/config
