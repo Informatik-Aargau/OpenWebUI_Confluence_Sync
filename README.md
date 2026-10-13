@@ -178,6 +178,7 @@ Lege Variablen in **Settings → CI/CD → Variables** an. Verwende für Stage u
 | Variablen | Verwendung | Schutz |
 |---|---|---|
 | `K8S_SERVER`, `K8S_CLUSTER`, `K8S_NAMESPACE`, `K8S_USER`, `K8S_USER_TOKEN` | Kubernetes-Zugriff; `K8S_USER_TOKEN` als Secret-Variable | Token masked, hidden (falls verfügbar) und protected |
+| `K8S_CA_CERT` | CA-Zertifikat bzw. CA-Bundle des Kubernetes-API-Servers; als GitLab-Variable vom Typ **File** hinterlegen | Nicht geheim, aber nur vertrauenswürdige Maintainer dürfen den Wert ändern |
 | `K8S_PULL_IMAGE_USER`, `K8S_PULL_IMAGE_PASSWORD` | Kubernetes Image-Pull-Secret | Passwort masked, hidden und protected |
 | `CRON_SCHEDULE` | CronJob-Zeitplan, z. B. `30 0 * * *` | Nicht geheim; pro Environment scopen, falls unterschiedlich |
 | `CONFLUENCE_BASE_URL`, `CONFLUENCE_PAT` | Confluence-Zugriff | PAT masked, hidden und protected |
