@@ -22,6 +22,7 @@ RUN groupadd --gid 1000 app && \
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/src /app/src
 
 ENV PATH="/app/.venv/bin:$PATH"
 
