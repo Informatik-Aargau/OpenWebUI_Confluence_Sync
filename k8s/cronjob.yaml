@@ -14,20 +14,18 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: gitlab-aargaugpt-kpi-registry-${CI_COMMIT_BRANCH}
           containers:
             - name: confluence-sync
-              image: ${REGISTRY}/confluence-openwebui-sync:${TAG}
+              image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
               # Default entrypoint runs incremental sync.
               # For a full sync, override with: ["python", "-m", "src.main", "--full"]
               envFrom:
                 - secretRef:
-                    name: confluence-sync-secrets
+                    name: aargaugpt-sync-env-${CI_COMMIT_BRANCH}
                 - configMapRef:
                     name: confluence-sync-config
-              volumeMounts:
-                - name: env-volume
-                  mountPath: /app/.env
-                  subPath: .env
               resources:
                 requests:
                   memory: "128Mi"
@@ -35,7 +33,3 @@ spec:
                 limits:
                   memory: "512Mi"
                   cpu: "500m"
-          volumes:
-            - name: env-volume
-              secret:
-                secretName: aargaugpt-sync-env-${ENVIRONMENT}

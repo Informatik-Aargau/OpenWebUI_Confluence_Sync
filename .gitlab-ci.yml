@@ -15,53 +15,17 @@ default:
     - cp "/etc/ktag-certs/KTAARGAUROOT02.pem" root.pem
     - cp "/etc/ktag-certs/KTAARGAUSUB02-01.pem" sub.pem
 
-generate_env:
-  stage: build
-  image: alpine:latest
-  script:
-    - PREFIX=""
-    - if [ "$CI_COMMIT_BRANCH" = "stage" ]; then PREFIX="STAGE_"; fi
-    - if [ "$CI_COMMIT_BRANCH" = "prod" ]; then PREFIX="PROD_"; fi
-    - if [ -z "$PREFIX" ]; then echo "Kein passender Branch."; exit 1; fi
-
-    # Branch-specific variables into dotenv file
-    - env | grep "^${PREFIX}" | sed "s/^${PREFIX}//" > .env
-    # Append global variables (those without PREFIX) to dotenv file
-    - env | grep -v "^${PREFIX}" | grep -v "CI_" >> .env
-
-    # Construct DATABASE_URL from components
-    - |
-      if [ -n "$OWUI_DB_HOST" ]; then
-        echo "DATABASE_URL=postgresql://${OWUI_DB_USER}:${OWUI_DB_PASSWORD}@${OWUI_DB_HOST}:${OWUI_DB_PORT}/${OWUI_DB_NAME_ANALYTICS}" >> .env
-        echo "DATABASE_URL constructed and added to .env"
-      fi
-
-    - echo "Erfolgreich .env für $CI_COMMIT_BRANCH generiert."
-    - echo "Enthaltene Variablen:"
-    - cat .env
-  artifacts:
-    reports:
-      dotenv: .env
-    paths:
-      - .env
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "stage" || $CI_COMMIT_BRANCH == "prod"'
-
 build-image:
   stage: build
   image: docker:latest
   services:
     - docker:dind
-  needs:
-    - job: generate_env
-      artifacts: true
   rules:
     - if: '$CI_COMMIT_BRANCH == "stage" || $CI_COMMIT_BRANCH == "prod"'
   before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_JOB_TOKEN $CI_REGISTRY
+    - printf '%s' "$CI_JOB_TOKEN" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
   script:
     - echo "Building and pushing Docker image to GitLab Container Registry"
-    - echo "Using variables from generate_env"
     - docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" .
     - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
 
@@ -73,18 +37,18 @@ deploy:
   image: reg.ag.ch/base-images/alpine-k8s #has kubectl installed
   environment:
     name: $CI_COMMIT_BRANCH
-  needs:
-    - job: generate_env
-      artifacts: true
   before_script:
-    # Set up kubectl with the kubeconfig from dotenv
+    # Build kubeconfig from environment-scoped GitLab variables.
     - mkdir -p ~/.kube
     - |
-      if [ -z "$KUBECONFIG" ]; then
-        echo "ERROR: KUBECONFIG variable is not set in .env. Please configure it in GitLab CI/CD Variables."
+      if [ -z "$K8S_SERVER" ] || [ -z "$K8S_CLUSTER" ] || [ -z "$K8S_NAMESPACE" ] || [ -z "$K8S_USER" ] || [ -z "$K8S_USER_TOKEN" ]; then
+        echo "ERROR: One or more required environment-scoped K8S_* variables are missing."
         exit 1
       fi
-    - echo "$KUBECONFIG" > ~/.kube/config
+    - kubectl config set-cluster "$K8S_CLUSTER" --server="$K8S_SERVER" --certificate-authority=root.pem --kubeconfig ~/.kube/config
+    - kubectl config set-credentials "$K8S_USER" --token="$K8S_USER_TOKEN" --kubeconfig ~/.kube/config
+    - kubectl config set-context "$K8S_CLUSTER" --cluster="$K8S_CLUSTER" --user="$K8S_USER" --namespace="$K8S_NAMESPACE" --kubeconfig ~/.kube/config
+    - kubectl config use-context "$K8S_CLUSTER" --kubeconfig ~/.kube/config
     - chmod 600 ~/.kube/config
     - kubectl version --client
     - kubectl config current-context
@@ -93,28 +57,40 @@ deploy:
     
     # Create/update docker registry secret for image pulling
     - |
-      kubectl create secret docker-registry gitlab-aargaugpt-kpi-registry-stage \
+      kubectl create secret docker-registry gitlab-aargaugpt-kpi-registry-$CI_COMMIT_BRANCH \
+        --namespace "$K8S_NAMESPACE" \
         --docker-server=$CI_REGISTRY \
         --docker-username=$K8S_PULL_IMAGE_USER \
         --docker-password=$K8S_PULL_IMAGE_PASSWORD \
         --dry-run=client -o yaml | kubectl apply -f -
     
-    # Create/update secret with environment variables from .env
+    # Create/update the application secret without creating a dotenv artifact.
     - |
-      B64_DOTENV=$(base64 -w 0 .env)
-      cat <<EOF | kubectl apply -f -
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: aargaugpt-sync-env-$CI_COMMIT_BRANCH
-      type: Opaque
-      data:
-        .env: $B64_DOTENV
-      EOF
+      kubectl create secret generic aargaugpt-sync-env-$CI_COMMIT_BRANCH \
+        --namespace "$K8S_NAMESPACE" \
+        --from-literal=CONFLUENCE_BASE_URL="$CONFLUENCE_BASE_URL" \
+        --from-literal=CONFLUENCE_PAT="$CONFLUENCE_PAT" \
+        --from-literal=OWUI_BASE_URL="$OWUI_BASE_URL" \
+        --from-literal=OWUI_PAT="$OWUI_PAT" \
+        --from-literal=MDM_BULK_SIZE="$MDM_BULK_SIZE" \
+        --from-literal=MDM_CLIENT_ID="$MDM_CLIENT_ID" \
+        --from-literal=MDM_CLIENT_SECRET="$MDM_CLIENT_SECRET" \
+        --from-literal=MDM_ENDPOINT_ORGANISATION="$MDM_ENDPOINT_ORGANISATION" \
+        --from-literal=MDM_ENDPOINT_USER="$MDM_ENDPOINT_USER" \
+        --from-literal=MDM_ENDPOINT_USER_EGOV="$MDM_ENDPOINT_USER_EGOV" \
+        --from-literal=OWUI_DB_HOST="$OWUI_DB_HOST" \
+        --from-literal=OWUI_DB_PORT="$OWUI_DB_PORT" \
+        --from-literal=OWUI_DB_USER="$OWUI_DB_USER" \
+        --from-literal=OWUI_DB_PASSWORD="$OWUI_DB_PASSWORD" \
+        --from-literal=OWUI_DB_NAME_ANALYTICS="$OWUI_DB_NAME_ANALYTICS" \
+        --from-literal=OWUI_DB_NAME_DOC="$OWUI_DB_NAME_DOC" \
+        --from-literal=OWUI_DB_NAME_CONF="$OWUI_DB_NAME_CONF" \
+        --from-literal=DATABASE_URL="postgresql://${OWUI_DB_USER}:${OWUI_DB_PASSWORD}@${OWUI_DB_HOST}:${OWUI_DB_PORT}/${OWUI_DB_NAME_ANALYTICS}" \
+        --from-literal=CONVERTER_ENGINE="${CONVERTER_ENGINE:-markdownify}" \
+        --from-literal=LOG_LEVEL="${LOG_LEVEL:-INFO}" \
+        --dry-run=client -o yaml | kubectl apply -f -
     
     # Deploy CronJob
-    - export CI_REGISTRY_IMAGE=$CI_REGISTRY_IMAGE
-    - export CI_COMMIT_SHORT_SHA=$CI_COMMIT_SHORT_SHA
     - envsubst < k8s/cronjob.yaml | kubectl apply -f -
     
     # Show deployment status

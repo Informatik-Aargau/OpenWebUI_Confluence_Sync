@@ -39,13 +39,15 @@ uv sync
 CONFLUENCE_BASE_URL=https://confluence.example.com
 CONFLUENCE_PAT=<Personal-Access-Token>
 
-OPENWEBUI_BASE_URL=https://openwebui.example.com
-OPENWEBUI_API_KEY=<Bearer-Token>
+OWUI_BASE_URL=https://openwebui.example.com
+OWUI_PAT=<Bearer-Token>
 
 DATABASE_URL=postgresql://user:password@host:5432/dbname
 
 LOG_LEVEL=INFO
 ```
+
+Die Anwendung liest ihre Konfiguration mit `pydantic-settings` aus Prozess-Umgebungsvariablen. Lokal kann sie diese Werte aus `.env` laden; im Kubernetes-CronJob kommen sie direkt aus einem Kubernetes Secret.
 
 ### 3. Datenbank vorbereiten
 
@@ -153,17 +155,55 @@ docker run --env-file .env confluence-openwebui-sync --full
 Manifeste in `k8s/`:
 
 - `namespace.yaml` — Namespace `confluence-sync`
-- `secret.yaml` — Credentials (via Sealed Secrets o.Ä. befüllen)
-- `configmap.yaml` — `LOG_LEVEL` etc.
-- `cronjob.yaml` — Täglicher Run um 02:00 Uhr
+- `secret.yaml` — älteres Secret-Template; wird von der GitLab-Pipeline nicht verwendet
+- `configmap.yaml` — nicht-sensitive Konfiguration wie `LOG_LEVEL`
+- `cronjob.yaml` — CronJob; Zeitplan, Namespace, Image und Secret-Namen werden beim Deploy aus CI-Variablen eingesetzt
 
 ```bash
-kubectl apply -f k8s/
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/configmap.yaml
 ```
 
 ### GitLab CI/CD
 
-Pipeline in `.gitlab-ci.yml`: Build → Push → Deploy auf `main`-Branch.
+Die Pipeline in `.gitlab-ci.yml` läuft auf den Branches `stage` und `prod`:
+
+1. `build-image` baut das Docker-Image und pusht es mit dem Commit-Tag in die GitLab Container Registry.
+2. Der manuelle Job `deploy` erstellt die Kubernetes-Verbindung aus den `K8S_*`-Variablen, aktualisiert Pull- und Anwendungs-Secrets und deployed den CronJob.
+
+#### GitLab-Variablen konfigurieren
+
+Lege Variablen in **Settings → CI/CD → Variables** an. Verwende für Stage und Prod jeweils dieselben Variablennamen und setze den **Environment scope** auf `stage` beziehungsweise `prod`. Der Deploy-Job verwendet den Branch-Namen als GitLab-Environment-Namen. Werte dürfen nicht in `.gitlab-ci.yml`, Kubernetes-Manifeste oder Logs geschrieben werden.
+
+| Variablen | Verwendung | Schutz |
+|---|---|---|
+| `K8S_SERVER`, `K8S_CLUSTER`, `K8S_NAMESPACE`, `K8S_USER`, `K8S_USER_TOKEN` | Kubernetes-Zugriff; `K8S_USER_TOKEN` als Secret-Variable | Token masked, hidden (falls verfügbar) und protected |
+| `K8S_PULL_IMAGE_USER`, `K8S_PULL_IMAGE_PASSWORD` | Kubernetes Image-Pull-Secret | Passwort masked, hidden und protected |
+| `CRON_SCHEDULE` | CronJob-Zeitplan, z. B. `30 0 * * *` | Nicht geheim; pro Environment scopen, falls unterschiedlich |
+| `CONFLUENCE_BASE_URL`, `CONFLUENCE_PAT` | Confluence-Zugriff | PAT masked, hidden und protected |
+| `OWUI_BASE_URL`, `OWUI_PAT` | OpenWebUI-Zugriff | PAT masked, hidden und protected |
+| `MDM_BULK_SIZE`, `MDM_CLIENT_ID`, `MDM_CLIENT_SECRET`, `MDM_ENDPOINT_ORGANISATION`, `MDM_ENDPOINT_USER`, `MDM_ENDPOINT_USER_EGOV` | MDM-Konfiguration | Client-Secret masked, hidden und protected |
+| `OWUI_DB_HOST`, `OWUI_DB_PORT`, `OWUI_DB_USER`, `OWUI_DB_PASSWORD`, `OWUI_DB_NAME_ANALYTICS`, `OWUI_DB_NAME_DOC`, `OWUI_DB_NAME_CONF` | OpenWebUI-Datenbankverbindungen | Passwort masked, hidden und protected |
+| `CONVERTER_ENGINE`, `LOG_LEVEL` | Optionale Anwendungs-Einstellungen | Kein Secret; global oder pro Environment scopen |
+
+Secrets, die je Umgebung variieren, sollten als zwei Variablen mit identischem Namen, aber den passenden Environment Scopes angelegt werden. Aktiviere `Protected` nur, wenn `stage` und `prod` in GitLab als geschützte Branches konfiguriert sind; andernfalls werden diese Variablen den Jobs nicht bereitgestellt. `Masked`/`Hidden` verhindern nicht den Zugriff eines bösartigen oder veränderten CI-Skripts auf die Werte, daher sollten geschützte Branches und Änderungen an der Pipeline kontrolliert werden.
+
+#### Secret- und Variablenfluss
+
+- Die Pipeline verwendet die Variablen direkt; es gibt keinen Job, der sie per `env` einsammelt, und keine `dotenv`-Reports oder Dotenv-Artefakte.
+- Der Deploy-Job erstellt `aargaugpt-sync-env-$CI_COMMIT_BRANCH` mit explizit angegebenen Schlüsseln. `DATABASE_URL` wird dort aus den OWUI-Datenbankkomponenten gebildet.
+- `cronjob.yaml` bindet dieses Kubernetes Secret per `envFrom` ein. Die Werte stehen dem Python-Prozess somit als Umgebungsvariablen zur Verfügung; eine gemountete `.env`-Datei ist im Cluster nicht erforderlich.
+- Ein separates, branch-spezifisches Registry-Secret wird erstellt und über `imagePullSecrets` für den Pod referenziert.
+- Der Namespace und die ConfigMap müssen vor dem ersten Deploy vorhanden sein. `K8S_NAMESPACE` muss zum Namespace der ConfigMap passen.
+
+#### Vorteile
+
+- **Begrenzte Weitergabe:** Es gelangen nur ausdrücklich im Deploy-Befehl aufgeführte Anwendungsvariablen in das Kubernetes Secret, nicht die gesamte Runner-Umgebung.
+- **Weniger Secret-Kopien:** Zugangsdaten erscheinen nicht in Dotenv-Artefakten oder in einer ausgegebenen `.env`-Datei.
+- **Umgebungstrennung:** Identische Variablennamen mit GitLab Environment Scopes reduzieren Präfix- und Auswahlfehler zwischen Stage und Prod.
+- **Klare Laufzeitkonfiguration:** Kubernetes stellt die Werte direkt als Prozess-Umgebungsvariablen bereit; Pydantic kann sie ohne zusätzliche Datei laden.
+
+GitLab/Kubernetes Secrets sind weiterhin keine vollständige Verschlüsselungs- oder Berechtigungsstrategie: Beschränke den Zugriff auf CI-Variablen und Kubernetes Secrets, nutze möglichst kurzlebige Tokens und rotiere Credentials regelmässig.
 
 ## Projektstruktur
 
