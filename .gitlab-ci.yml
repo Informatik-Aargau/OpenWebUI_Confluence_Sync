@@ -11,7 +11,8 @@ default:
     - kind/docker
     - net/ads
   before_script:
-    - export no_proxy="*.ktag.ch,10.0.0.0/8,172.16.0.0/12,193.135.0.0/16"
+    - export no_proxy="ktag.ch,.ktag.ch,10.0.0.0/8,172.16.0.0/12,193.135.0.0/16"
+    - export NO_PROXY="$no_proxy"
     - cp "/etc/ktag-certs/KTAARGAUROOT02.pem" root.pem
     - cp "/etc/ktag-certs/KTAARGAUSUB02-01.pem" sub.pem
 
@@ -38,7 +39,8 @@ deploy:
   environment:
     name: $CI_COMMIT_BRANCH
   before_script:
-    - export no_proxy="*.ktag.ch,10.0.0.0/8,172.16.0.0/12,193.135.0.0/16"
+    - export no_proxy="ktag.ch,.ktag.ch,10.0.0.0/8,172.16.0.0/12,193.135.0.0/16"
+    - export NO_PROXY="$no_proxy"
     - cp "/etc/ktag-certs/KTAARGAUROOT02.pem" root.pem
     - cp "/etc/ktag-certs/KTAARGAUSUB02-01.pem" sub.pem
     - cat root.pem sub.pem > k8s-ca.pem
