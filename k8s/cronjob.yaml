@@ -14,11 +14,22 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
           imagePullSecrets:
             - name: gitlab-aargaugpt-kpi-registry-${CI_COMMIT_BRANCH}
           containers:
             - name: confluence-sync
               image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               # Default entrypoint runs incremental sync.
               # For a full sync, override with: ["python", "-m", "src.main", "--full"]
               envFrom:
