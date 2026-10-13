@@ -152,17 +152,11 @@ docker run --env-file .env confluence-openwebui-sync --full
 
 ### Kubernetes
 
-Manifeste in `k8s/`:
+Manifest in `k8s/`:
 
-- `namespace.yaml` — Namespace `confluence-sync`
-- `secret.yaml` — älteres Secret-Template; wird von der GitLab-Pipeline nicht verwendet
-- `configmap.yaml` — nicht-sensitive Konfiguration wie `LOG_LEVEL`
 - `cronjob.yaml` — CronJob; Zeitplan, Namespace, Image und Secret-Namen werden beim Deploy aus CI-Variablen eingesetzt
 
-```bash
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/configmap.yaml
-```
+Der Ziel-Namespace muss im Cluster bereits existieren. Die GitLab-Pipeline erstellt oder aktualisiert das Anwendungs-Secret sowie die ConfigMap `confluence-sync-config` im Namespace `K8S_NAMESPACE` vor dem CronJob.
 
 ### GitLab CI/CD
 
@@ -195,7 +189,7 @@ Secrets, die je Umgebung variieren, sollten als zwei Variablen mit identischem N
 - Der Deploy-Job erstellt `aargaugpt-sync-env-$CI_COMMIT_BRANCH` mit explizit angegebenen Schlüsseln. `DATABASE_URL` wird dort aus den OWUI-Datenbankkomponenten gebildet.
 - `cronjob.yaml` bindet dieses Kubernetes Secret per `envFrom` ein. Die Werte stehen dem Python-Prozess somit als Umgebungsvariablen zur Verfügung; eine gemountete `.env`-Datei ist im Cluster nicht erforderlich.
 - Ein separates, branch-spezifisches Registry-Secret wird erstellt und über `imagePullSecrets` für den Pod referenziert.
-- Der Namespace und die ConfigMap müssen vor dem ersten Deploy vorhanden sein. `K8S_NAMESPACE` muss zum Namespace der ConfigMap passen.
+- `K8S_NAMESPACE` muss existieren; ConfigMap und CronJob werden im Deploy-Job in genau diesem Namespace angelegt.
 
 #### Vorteile
 

@@ -90,6 +90,12 @@ deploy:
         --from-literal=OWUI_DB_NAME_CONF="$OWUI_DB_NAME_CONF" \
         --from-literal=DATABASE_URL="postgresql://${OWUI_DB_USER}:${OWUI_DB_PASSWORD}@${OWUI_DB_HOST}:${OWUI_DB_PORT}/${OWUI_DB_NAME_ANALYTICS}" \
         --from-literal=CONVERTER_ENGINE="${CONVERTER_ENGINE:-markdownify}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    # Create/update non-sensitive application configuration in the same namespace.
+    - |
+      kubectl create configmap confluence-sync-config \
+        --namespace "$K8S_NAMESPACE" \
         --from-literal=LOG_LEVEL="${LOG_LEVEL:-INFO}" \
         --dry-run=client -o yaml | kubectl apply -f -
     
