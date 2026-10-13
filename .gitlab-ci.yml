@@ -105,5 +105,7 @@ deploy:
     # Show deployment status
     - kubectl get cronjobs -l app=aargaugpt-kpi
   rules:
+    - if: '$CI_COMMIT_BRANCH == "stage"'
+      when: on_success
     - if: '$CI_COMMIT_BRANCH == "prod"'
-      when: manual  # No automatic deployment
+      when: manual
