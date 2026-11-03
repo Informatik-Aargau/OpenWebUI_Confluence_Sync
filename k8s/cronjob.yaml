@@ -4,7 +4,7 @@ metadata:
   name: confluence-sync
   namespace: ${K8S_NAMESPACE}
 spec:
-  schedule: "${CRON_SCHEDULE}"  # Daily at 02:00
+  schedule: "${CRON_SCHEDULE}"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -21,7 +21,7 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           imagePullSecrets:
-            - name: gitlab-aargaugpt-kpi-registry-${CI_COMMIT_BRANCH}
+            - name: gitlab-aargaugpt-sync-registry-${CI_COMMIT_BRANCH}
           containers:
             - name: confluence-sync
               image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}

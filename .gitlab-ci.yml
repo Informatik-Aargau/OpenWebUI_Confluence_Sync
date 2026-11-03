@@ -2,6 +2,11 @@ stages:
   - build
   - deploy
 
+variables:
+  # "docker" keeps the dind service reachable without the proxy.
+  no_proxy: "docker,localhost,127.0.0.1,ktag.ch,.ktag.ch,10.0.0.0/8,172.16.0.0/12,193.135.0.0/16"
+  NO_PROXY: "docker,localhost,127.0.0.1,ktag.ch,.ktag.ch,10.0.0.0/8,172.16.0.0/12,193.135.0.0/16"
+
 default:
   retry: 2
   timeout: 10m
@@ -10,11 +15,6 @@ default:
     - os/linux
     - kind/docker
     - net/ads
-  before_script:
-    - export no_proxy="ktag.ch,.ktag.ch,10.0.0.0/8,172.16.0.0/12,193.135.0.0/16"
-    - export NO_PROXY="$no_proxy"
-    - cp "/etc/ktag-certs/KTAARGAUROOT02.pem" root.pem
-    - cp "/etc/ktag-certs/KTAARGAUSUB02-01.pem" sub.pem
 
 build-image:
   stage: build
@@ -30,7 +30,7 @@ build-image:
     - docker build --build-arg HTTP_PROXY="$http_proxy" --build-arg HTTPS_PROXY="$https_proxy" --build-arg NO_PROXY="$no_proxy" -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" .
     - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
 
-# Deploy to Kubernetes (STAGE environment)
+# Deploy to Kubernetes (All environments)
 
 deploy:
   stage: deploy
@@ -39,8 +39,6 @@ deploy:
   environment:
     name: $CI_COMMIT_BRANCH
   before_script:
-    - export no_proxy="ktag.ch,.ktag.ch,10.0.0.0/8,172.16.0.0/12,193.135.0.0/16"
-    - export NO_PROXY="$no_proxy"
     # Build kubeconfig from environment-scoped GitLab variables.
     - mkdir -p ~/.kube
     - |
@@ -60,7 +58,7 @@ deploy:
     
     # Create/update docker registry secret for image pulling
     - |
-      kubectl create secret docker-registry gitlab-aargaugpt-kpi-registry-$CI_COMMIT_BRANCH \
+      kubectl create secret docker-registry gitlab-aargaugpt-sync-registry-$CI_COMMIT_BRANCH \
         --namespace "$K8S_NAMESPACE" \
         --docker-server=$CI_REGISTRY \
         --docker-username=$K8S_PULL_IMAGE_USER \
@@ -99,10 +97,11 @@ deploy:
         --dry-run=client -o yaml | kubectl apply -f -
     
     # Deploy CronJob
+    - export CRON_SCHEDULE="${CRON_SCHEDULE:-30 0 * * *}"
     - envsubst < k8s/cronjob.yaml | kubectl apply -f -
     
     # Show deployment status
-    - kubectl get cronjobs -l app=aargaugpt-kpi
+    - kubectl get cronjobs -l app=aargaugpt-sync
   rules:
     - if: '$CI_COMMIT_BRANCH == "stage"'
       when: on_success
