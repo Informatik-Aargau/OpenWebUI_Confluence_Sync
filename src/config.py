@@ -14,12 +14,12 @@ class Settings(BaseSettings):
     database_url: str
 
     # MDM (Master Data Management)
-    mdm_client_id: str
-    mdm_client_secret: str
-    mdm_endpoint_organisation: str
-    mdm_endpoint_user: str
-    mdm_endpoint_user_egov: str
-    mdm_bulk_size: int = 100
+    #mdm_client_id: str
+    #mdm_client_secret: str
+    #mdm_endpoint_organisation: str
+    #mdm_endpoint_user: str
+    #mdm_endpoint_user_egov: str
+    #mdm_bulk_size: int = 100
 
     # OpenWebUI DB Details (if needed separately from database_url)
     owui_db_host: str | None = None
