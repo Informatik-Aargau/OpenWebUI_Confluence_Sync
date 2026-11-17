@@ -13,23 +13,6 @@ class Settings(BaseSettings):
     # Database
     database_url: str
 
-    # MDM (Master Data Management)
-    #mdm_client_id: str
-    #mdm_client_secret: str
-    #mdm_endpoint_organisation: str
-    #mdm_endpoint_user: str
-    #mdm_endpoint_user_egov: str
-    #mdm_bulk_size: int = 100
-
-    # OpenWebUI DB Details (if needed separately from database_url)
-    owui_db_host: str | None = None
-    owui_db_port: int | None = None
-    owui_db_user: str | None = None
-    owui_db_password: str | None = None
-    owui_db_name_analytics: str | None = None
-    owui_db_name_doc: str | None = None
-    owui_db_name_conf: str | None = None
-
     log_level: str = "INFO"
 
     # Converter engine: "markdownify" (default) or "docling"
